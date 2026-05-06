@@ -50,9 +50,14 @@ async function fetchAllSessions(): Promise<Session[]> {
   );
 }
 
-export default async function AdminDashboard() {
+export default async function AdminDashboard({
+  searchParams,
+}: {
+  searchParams: Promise<{ reset?: string }>;
+}) {
   if (!(await isAuthed())) redirect('/admin/login');
 
+  const sp = await searchParams;
   const sessions = await fetchAllSessions();
   const counts = {
     total: sessions.length,
@@ -78,7 +83,18 @@ export default async function AdminDashboard() {
         </form>
       </header>
 
-      <div className="card" style={{ marginTop: 0 }}>
+      {sp.reset === 'ok' && (
+        <div className="card" style={{ background: '#d4edda', borderColor: '#c3e6cb', marginTop: 0 }}>
+          ✓ Session を削除しました
+        </div>
+      )}
+      {sp.reset === 'err' && (
+        <div className="card" style={{ background: '#f8d7da', borderColor: '#f5c6cb', marginTop: 0 }}>
+          リセットに失敗しました
+        </div>
+      )}
+
+      <div className="card" style={{ marginTop: sp.reset ? 12 : 0 }}>
         <strong>Sessions: {counts.total}</strong>{' '}
         <span className="muted">
           (rewarded {counts.rewarded} / completed {counts.completed} / in progress{' '}
@@ -151,11 +167,26 @@ function SessionRow({ session }: { session: Session }) {
   const started = session.startedAt
     ? new Date(session.startedAt).toLocaleString('ja-JP')
     : '-';
+  const isV2 = !!session.questId;
 
   return (
     <tr>
       <Td style={{ fontFamily: 'ui-monospace, Menlo, monospace' }}>
         <span title={wallet}>{short}</span>
+        <form action="/api/admin/reset" method="POST" style={{ marginTop: 4 }}>
+          <input type="hidden" name="wallet" value={wallet} />
+          {isV2 && session.questId && (
+            <input type="hidden" name="questId" value={session.questId} />
+          )}
+          <button
+            className="secondary"
+            type="submit"
+            style={{ fontSize: 11, padding: '2px 8px' }}
+            title="この wallet の session を KV から削除（再参加可能になる）"
+          >
+            Reset
+          </button>
+        </form>
       </Td>
       <Td>{quest}</Td>
       <Td>
