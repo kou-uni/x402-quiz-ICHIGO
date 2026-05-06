@@ -17,6 +17,7 @@ Web3AI概論 2026（千葉工業大学）課題運用想定。
 - 経済値 (`depositAmount` / `rewardAmount`) を Quest YAML に内蔵、env はフォールバック
 - ファイル: `surveys/v1.yaml` → `quests/q-survey-001.yaml`、`lib/survey.ts` → `lib/quest.ts`
 - 検証ルール `validation: ValidationRule[]` を Quest 内に記述（v2 では `llm-judge` のみ実装）
+- **Admin API skeleton** (`/api/admin/quests`) — Hermes 統合の接続点。Bearer auth (`ADMIN_TOKEN`) で保護
 
 詳細設計: [`docs/quest-platform-plan.md`](./docs/quest-platform-plan.md)
 意思決定書: Obsidian `decisions/2026-05-06-quest-platform-pivot.md`
@@ -135,6 +136,48 @@ Vercel ダッシュボードで:
 ├─ tsconfig.json
 └─ package.json
 ```
+
+## Admin API（Hermes 用接続点）
+
+すべて `Authorization: Bearer ${ADMIN_TOKEN}` を要求。`ADMIN_TOKEN` 未設定時は `503` を返します。
+
+| Method | Path | 用途 |
+|---|---|---|
+| `GET` | `/api/admin/quests` | KV に登録された Quest 一覧 |
+| `POST` | `/api/admin/quests` | Quest を新規作成 / 上書き（body: Quest JSON）|
+| `GET` | `/api/admin/quests/{id}` | 1 つの Quest を取得 |
+| `PATCH` | `/api/admin/quests/{id}` | 部分更新（status/closedAt 等）|
+| `DELETE` | `/api/admin/quests/{id}` | KV から削除（YAML には影響しない）|
+| `GET` | `/api/admin/quests/{id}/results` | 集計結果（v2 はメタのみ・v2.x で参加者リスト追加）|
+
+**Quest JSON 例**:
+```json
+{
+  "id": "q-survey-002-mvp-feedback",
+  "kind": "survey",
+  "title": "MVP フィードバック",
+  "depositAmount": "100",
+  "rewardAmount": "300",
+  "payer": "participant",
+  "survey": {
+    "questions": [
+      { "id": "q1", "prompt": "使ってみてどうでしたか？", "minLength": 30 }
+    ]
+  },
+  "validation": [{ "type": "llm-judge", "leniency": "medium" }]
+}
+```
+
+**curl 例**:
+```bash
+curl -X POST https://your-app.vercel.app/api/admin/quests \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d @quest.json
+```
+
+**読み取り順**: 公開 API は KV 優先 → YAML フォールバック。Hermes が KV に投入した
+Quest と、リポにバンドルされた YAML の両方を等しく扱える。
 
 ## State machine
 
