@@ -8,7 +8,8 @@
 // .env.local を読み込み、Optimism 上の treasury wallet について:
 //   - ETH balance（ガス用）
 //   - ICHIGO balance（reward 払い出し原資）
-//   - ICHIGO Whitelistable の登録状況（よくある関数名で試行）
+//   - ICHIGO Whitelistable の登録状況
+//     ICHIGO.registry() → Registry.isWhitelisted(address) で照会
 //   - tx count (nonce)
 // を確認します。
 
@@ -51,11 +52,12 @@ const ERC20 = parseAbi([
   'function decimals() view returns (uint8)',
 ]);
 
-const WHITELIST_PROBES = parseAbi([
-  'function isWhitelisted(address) view returns (bool)',
-  'function whitelisted(address) view returns (bool)',
-  'function isAccountWhitelisted(address) view returns (bool)',
-  'function whitelist(address) view returns (bool)',
+const ICHIGO_REGISTRY_ABI = parseAbi([
+  'function registry() view returns (address)',
+]);
+
+const REGISTRY_ABI = parseAbi([
+  'function isWhitelisted(address member) view returns (bool)',
 ]);
 
 const client = createPublicClient({ chain: optimism, transport: http(RPC) });
@@ -127,32 +129,30 @@ async function main() {
     );
   }
 
-  // ── Whitelist 推定 ─────────────────────────────────
-  let detected = false;
-  for (const fn of ['isWhitelisted', 'whitelisted', 'isAccountWhitelisted', 'whitelist']) {
-    try {
-      const ok = await client.readContract({
-        address: ichigo,
-        abi: WHITELIST_PROBES,
-        functionName: fn,
-        args: [treasury],
-      });
-      detected = true;
-      const tag = ok
-        ? `${c.green}✅ whitelisted${c.reset}`
-        : `${c.red}❌ NOT whitelisted${c.reset}`;
-      console.log(`Whitelist:      ${tag}   ${c.dim}(via ${fn}() on ICHIGO contract)${c.reset}`);
-      break;
-    } catch {
-      // try next
-    }
-  }
-  if (!detected) {
+  // ── Whitelist チェック ────────────────────────────
+  // ICHIGO.registry() → Registry.isWhitelisted(treasury) の 2 段
+  let whitelisted = null;
+  let registryAddr = null;
+  try {
+    registryAddr = await client.readContract({
+      address: ichigo,
+      abi: ICHIGO_REGISTRY_ABI,
+      functionName: 'registry',
+    });
+    whitelisted = await client.readContract({
+      address: registryAddr,
+      abi: REGISTRY_ABI,
+      functionName: 'isWhitelisted',
+      args: [treasury],
+    });
+    const tag = whitelisted
+      ? `${c.green}✅ whitelisted${c.reset}`
+      : `${c.red}❌ NOT whitelisted${c.reset}`;
+    console.log(`Whitelist:      ${tag}   ${c.dim}(Registry.isWhitelisted)${c.reset}`);
+    console.log(`${c.dim}Registry:       ${registryAddr}${c.reset}`);
+  } catch (e) {
     console.log(
-      `Whitelist:      ${c.yellow}unable to detect via known function names${c.reset}`
-    );
-    console.log(
-      `${c.dim}                → check manually: https://optimistic.etherscan.io/address/${ichigo}#readContract${c.reset}`
+      `Whitelist:      ${c.yellow}check failed${c.reset} — ${e instanceof Error ? e.message : e}`
     );
   }
 
@@ -165,7 +165,7 @@ async function main() {
   const ready =
     eth > 100_000_000_000_000n &&
     ichigoBal >= 500n * 10n ** BigInt(DECIMALS) &&
-    detected;
+    whitelisted === true;
   if (ready) {
     console.log(`${c.green}${c.bold}✅ READY — reward を払い出せる状態です${c.reset}`);
   } else {
