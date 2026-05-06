@@ -41,3 +41,20 @@ a { color: #0070f3; }
 .muted { color: #666; font-size: 13px; }
 .error { color: #c0212d; }
 .tx { word-break: break-all; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #eee;
+  color: #444;
+}
+.badge-rewarded { background: #d4edda; color: #155724; }
+.badge-completed { background: #fff3cd; color: #856404; }
+.badge-in_progress { background: #cce5ff; color: #004085; }
+.badge-rewarding { background: #ffe5b4; color: #8a4b08; }
+.badge-failed { background: #f8d7da; color: #721c24; }
+table { font-variant-numeric: tabular-nums; }
+table a { color: #0070f3; }
+details summary { user-select: none; }

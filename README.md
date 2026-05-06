@@ -137,7 +137,20 @@ Vercel ダッシュボードで:
 └─ package.json
 ```
 
-## Admin API（Hermes 用接続点）
+## Admin Dashboard（人間向け / `/admin`）
+
+`/admin` にアクセスすると、収集された全 session（参加者ウォレット / 状態 / 回答 / tx hash）が
+1 画面で見られる軽量ダッシュボードです。
+
+- ログイン: `/admin/login` でパスワード入力（env `ADMIN_PASSWORD`）
+- セッション cookie 24 時間
+- HMAC-signed cookie、HttpOnly + Secure（本番）
+- データは Vercel KV から直読み（リロードで最新化）
+
+`ADMIN_PASSWORD` は Vercel の Environment Variables に設定してください。
+推奨: `openssl rand -base64 24` で生成した長い文字列。
+
+## Admin API（Hermes 用接続点 / `/api/admin/quests`）
 
 すべて `Authorization: Bearer ${ADMIN_TOKEN}` を要求。`ADMIN_TOKEN` 未設定時は `503` を返します。
 
@@ -149,6 +162,10 @@ Vercel ダッシュボードで:
 | `PATCH` | `/api/admin/quests/{id}` | 部分更新（status/closedAt 等）|
 | `DELETE` | `/api/admin/quests/{id}` | KV から削除（YAML には影響しない）|
 | `GET` | `/api/admin/quests/{id}/results` | 集計結果（v2 はメタのみ・v2.x で参加者リスト追加）|
+
+`ADMIN_TOKEN` と `ADMIN_PASSWORD` は別の env var です:
+- `ADMIN_TOKEN` = Hermes / 自動エージェントが Bearer auth で叩く（programmatic）
+- `ADMIN_PASSWORD` = 人間が `/admin/login` でログインする（cookie auth）
 
 **Quest JSON 例**:
 ```json
