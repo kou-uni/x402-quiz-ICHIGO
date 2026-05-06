@@ -12,7 +12,11 @@
 //   - tx count (nonce)
 // を確認します。
 
-import 'dotenv/config';
+// .env.local → .env の順で読む（Next.js と同じ優先順位）
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
+dotenv.config({ path: '.env' });
+
 import {
   createPublicClient,
   http,
