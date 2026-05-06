@@ -42,9 +42,10 @@ type Phase =
   | 'error';
 
 // ─── LiveLog ─────────────────────────────────────────────────
-// コンソール風の進行ログ。コメント (// ...) と step (✓/⟳/✗) を混ぜる。
+// コンソール風の進行ログ。コメント (// ...) と step (✓/⟳/✗) と callout (💎ポップ吹き出し) を混ぜる。
 type Entry =
   | { kind: 'comment'; text: string }
+  | { kind: 'callout'; text: string; emoji?: string }
   | { kind: 'step'; id: string; label: string; status: 'running' | 'done' | 'failed'; detail?: string };
 
 function useLiveLog() {
@@ -54,6 +55,8 @@ function useLiveLog() {
     reset: () => setEntries([]),
     comment: (text: string) =>
       setEntries((p) => [...p, { kind: 'comment', text }]),
+    callout: (text: string, emoji?: string) =>
+      setEntries((p) => [...p, { kind: 'callout', text, emoji }]),
     start: (id: string, label: string) =>
       setEntries((p) => [...p, { kind: 'step', id, label, status: 'running' }]),
     done: (id: string, detail?: string) =>
@@ -82,6 +85,13 @@ function LiveLog({ entries }: { entries: Entry[] }) {
             {e.text.split('\n').map((line, j) => (
               <div key={j}>// {line}</div>
             ))}
+          </div>
+        ) : e.kind === 'callout' ? (
+          <div key={`x${i}`} className="log-callout" role="note">
+            <span className="log-callout-emoji" aria-hidden>
+              {e.emoji ?? '💎'}
+            </span>
+            <span className="log-callout-text">{e.text}</span>
           </div>
         ) : (
           <div key={e.id} className={`log-step log-step-${e.status}`}>
@@ -172,6 +182,7 @@ export default function Page() {
         args: [TREASURY, value],
       });
       log.done('sign', `broadcasted: ${shorten(txHash)}`);
+      log.callout('ここが x402 の "署名" 部分！— client が支払いに sign する瞬間', '💎');
     } catch (e) {
       log.fail('sign', toMsg(e));
       setError(toMsg(e));
@@ -223,6 +234,7 @@ export default function Page() {
         'verify',
         `${DEPOSIT_AMOUNT} ICHIGO matched (${shorten(address)} → ${shorten(TREASURY)})`
       );
+      log.callout('ここが x402 の "検証 + retry"！— server が支払い証明を検証して資源を解放', '💎');
       log.comment('検証通過 → session を in_progress に。Quest 開始。');
 
       setQuestion(data.nextQuestion);
@@ -301,6 +313,7 @@ export default function Page() {
       }
       rewardTxHash = data.rewardTx;
       log.done('sign-server', `tx: ${shorten(rewardTxHash)}`);
+      log.callout('ここは x402 を反転させた独自実装！— 通常は client → server に払うが、このアプリは server → client', '🔄');
     } catch (e) {
       log.fail('sign-server', toMsg(e));
       setError(toMsg(e));
