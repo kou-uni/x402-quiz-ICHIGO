@@ -1,0 +1,347 @@
+# Tier 1 Quest 草案集
+#
+# 「契約は精密、思考は開放」原則のもと、Beginner が 10 分で完走できる粒度の例。
+# Claude Code に投げて、軽くプロンプト調整して提出 → preflight でフィードバック → submit、
+# というループが完結することを想定。
+#
+# 共通ルール:
+# - tier: 1
+# - 入力は短いテキスト 1 つ（外部 API 呼び出し不要）
+# - 出力は 3-5 フィールドの JSON
+# - validation: schema 厳密 + llm-judge(leniency: high)
+# - reward は 50-150 ICHIGO（Tier 1 として小さめ）
+# - estimated_time: 10 minutes
+#
+# 各 quest は v3 着手時にそのまま `quests/{id}.yaml` として配信できる。
+
+quests:
+
+  # 1. テキスト感情分類
+  - id: q-t1-001-sentiment-classify
+    kind: task
+    tier: 1
+    title: 短文の感情を分類する
+    short_instruction: |
+      与えられた短い日本語テキストの感情を判定し、
+      sentiment / confidence / reason を返してください。
+    worked_example:
+      input:
+        text: 新しいキーボードが届いた、打鍵感が想像以上に良くて作業が捗る。
+      output:
+        sentiment: positive
+        confidence: 0.9
+        reason: "「想像以上に良い」「作業が捗る」など明確な肯定表現がある"
+    output_schema:
+      type: object
+      required: [sentiment, confidence, reason]
+      properties:
+        sentiment: { enum: [positive, neutral, negative] }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        reason: { type: string, minLength: 10 }
+      additionalProperties: false
+    validation:
+      - { type: schema }
+      - { type: llm-judge, leniency: high, prompt: "sentiment は妥当か。reason は input の語句に根拠があるか。" }
+    reward: 100
+    estimated_time: 10 minutes
+
+  # 2. 自由記述から構造抽出
+  - id: q-t1-002-extract-meishi
+    kind: task
+    tier: 1
+    title: 名刺風テキストから連絡先を抽出
+    short_instruction: |
+      名刺っぽい自由記述から、name / company / title / email を構造化して返してください。
+      不足するフィールドは null。
+    worked_example:
+      input:
+        text: |
+          山田太郎です。株式会社ヘンカクの シニアエンジニアをやっています。
+          taro@henkaku.example まで連絡ください。
+      output:
+        name: 山田太郎
+        company: 株式会社ヘンカク
+        title: シニアエンジニア
+        email: taro@henkaku.example
+    output_schema:
+      type: object
+      required: [name, company, title, email]
+      properties:
+        name: { type: [string, "null"] }
+        company: { type: [string, "null"] }
+        title: { type: [string, "null"] }
+        email: { type: [string, "null"], format: email }
+      additionalProperties: false
+    validation:
+      - { type: schema }
+      - { type: regex, field: email, pattern: "^[\\w.-]+@[\\w.-]+\\.[\\w]+$|^null$" }
+      - { type: llm-judge, leniency: high }
+    reward: 100
+    estimated_time: 10 minutes
+
+  # 3. 100字 TLDR
+  - id: q-t1-003-tldr-100
+    kind: task
+    tier: 1
+    title: 100字以内 TLDR を生成
+    short_instruction: |
+      与えられた段落を、100 字以内の TLDR にまとめてください。
+      char_count はあなたが返す tldr の文字数。
+    worked_example:
+      input:
+        text: |
+          (200-500字の段落)
+      output:
+        tldr: "(100字以内の要約)"
+        char_count: 87
+    output_schema:
+      type: object
+      required: [tldr, char_count]
+      properties:
+        tldr: { type: string, minLength: 20, maxLength: 100 }
+        char_count: { type: integer, minimum: 20, maximum: 100 }
+      additionalProperties: false
+    validation:
+      - { type: schema }
+      - { type: llm-judge, leniency: high, prompt: "原文の主旨を 100 字以内で表現できているか。" }
+    reward: 100
+    estimated_time: 10 minutes
+
+  # 4. 言い換え 3 通り
+  - id: q-t1-004-paraphrase-3
+    kind: task
+    tier: 1
+    title: 同じ意味で 3 通りに言い換える
+    short_instruction: |
+      与えられた 1 文を、同じ意味のまま 3 通りに言い換えてください。
+      口調や語彙を変えること。
+    worked_example:
+      input:
+        sentence: "AIエージェントが自律的にお金を扱う未来は意外と近い。"
+      output:
+        variations:
+          - "AI エージェントによる自律的な資産管理は、思っているより早く現実になる。"
+          - "近いうちに、AI が自分の判断で金銭をやり取りする時代が来る。"
+          - "意外なほど早い段階で、エージェントは自律的に経済活動するようになるだろう。"
+    output_schema:
+      type: object
+      required: [variations]
+      properties:
+        variations:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items: { type: string, minLength: 10 }
+      additionalProperties: false
+    validation:
+      - { type: schema }
+      - { type: llm-judge, leniency: high, prompt: "3 つの言い換えが全て元文と同じ意味か。互いに表現が異なるか。" }
+    reward: 100
+    estimated_time: 10 minutes
+
+  # 5. 関連タグ抽出
+  - id: q-t1-005-tag-extract
+    kind: task
+    tier: 1
+    title: ブログ冒頭から関連タグを 3-5 個抽出
+    short_instruction: |
+      与えられた記事冒頭から、SNS で使えそうな関連タグを 3〜5 個抽出してください。
+      日本語または英語、半角アルファベット推奨。
+    worked_example:
+      input:
+        text: "Optimism 上で ICHIGO トークンを使った x402 風アンケートツールを作った。Vercel デプロイで誰でも使える。"
+      output:
+        tags: [Optimism, ICHIGO, x402, Vercel, Web3]
+    output_schema:
+      type: object
+      required: [tags]
+      properties:
+        tags:
+          type: array
+          minItems: 3
+          maxItems: 5
+          items: { type: string, minLength: 2, maxLength: 30 }
+      additionalProperties: false
+    validation:
+      - { type: schema }
+      - { type: llm-judge, leniency: high, prompt: "タグは入力テキストに関連しているか。" }
+    reward: 80
+    estimated_time: 10 minutes
+
+  # 6. yes/no + 根拠
+  - id: q-t1-006-yesno-reason
+    kind: task
+    tier: 1
+    title: yes/no 質問に根拠つきで回答
+    short_instruction: |
+      与えられた質問とコンテキストに対して、
+      answer (yes/no/unclear) と reason を返してください。
+      コンテキストから判断できない場合は unclear を選ぶ。
+    worked_example:
+      input:
+        question: 「ICHIGOは Optimism 上のERC20である」は正しい？
+        context: |
+          ICHIGO は Optimism mainnet 上にデプロイされた ERC20 で、
+          Whitelistable を継承しています。
+      output:
+        answer: yes
+        reason: "コンテキストに「Optimism mainnet 上にデプロイされた ERC20」と明記されている。"
+    output_schema:
+      type: object
+      required: [answer, reason]
+      properties:
+        answer: { enum: [yes, no, unclear] }
+        reason: { type: string, minLength: 15 }
+      additionalProperties: false
+    validation:
+      - { type: schema }
+      - { type: llm-judge, leniency: high, prompt: "answer がコンテキストの内容と整合しているか。reason は具体的根拠を引いているか。" }
+    reward: 100
+    estimated_time: 10 minutes
+
+  # 7. ハッシュタグ生成
+  - id: q-t1-007-hashtag-gen
+    kind: task
+    tier: 1
+    title: SNS 投稿向けハッシュタグを 5 個生成
+    short_instruction: |
+      投稿内容に合うハッシュタグを 5 個生成してください。
+      # 記号は付けず文字列のみ。日本語/英語混在 OK。
+    worked_example:
+      input:
+        post: "今日は千葉工業大学の Web3AI 概論で Joi Ito 学長の特別講義があった。AIエージェント時代の実践知についての話、響いた。"
+      output:
+        hashtags: [Web3AI概論, Chibatech, JoiIto, AIエージェント, 実践知]
+    output_schema:
+      type: object
+      required: [hashtags]
+      properties:
+        hashtags:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items:
+            type: string
+            minLength: 2
+            maxLength: 30
+            pattern: "^[^#\\s].*$"
+      additionalProperties: false
+    validation:
+      - { type: schema }
+      - { type: llm-judge, leniency: high, prompt: "ハッシュタグは投稿内容に関連しているか。# 記号が含まれていないか。" }
+    reward: 80
+    estimated_time: 10 minutes
+
+  # 8. エラー要約
+  - id: q-t1-008-error-summary
+    kind: task
+    tier: 1
+    title: スタックトレースから何が起きたか要約
+    short_instruction: |
+      与えられたエラー出力（スタックトレース等）から、
+      summary（何が起きたか・1 文）と suggested_fix（推測される対処・1 文）を返してください。
+    worked_example:
+      input:
+        log: |
+          TypeError: Cannot read properties of undefined (reading 'address')
+            at handleSubmit (page.tsx:42:15)
+            at HTMLButtonElement.onClick
+      output:
+        summary: "page.tsx:42 で undefined のオブジェクトに .address でアクセスしようとして失敗している。"
+        suggested_fix: "useAccount() の address が undefined のまま onClick が走らないよう、isConnected で guard する。"
+    output_schema:
+      type: object
+      required: [summary, suggested_fix]
+      properties:
+        summary: { type: string, minLength: 20, maxLength: 200 }
+        suggested_fix: { type: string, minLength: 20, maxLength: 200 }
+      additionalProperties: false
+    validation:
+      - { type: schema }
+      - { type: llm-judge, leniency: high, prompt: "summary はエラー内容を正確に表現しているか。suggested_fix は実行可能な対処か。" }
+    reward: 120
+    estimated_time: 10 minutes
+
+  # 9. 多言語化（日 → 英）
+  - id: q-t1-009-ja-to-en
+    kind: task
+    tier: 1
+    title: 日本語の 1 文を英語に翻訳
+    short_instruction: |
+      与えられた日本語の 1 文を、自然な英語に翻訳してください。
+      formal 度を low / medium / high で自己申告。
+    worked_example:
+      input:
+        ja: "x402 を使えば、エージェントが自律的に支払って API を叩ける。"
+      output:
+        en: "With x402, agents can autonomously pay to call APIs."
+        formality: medium
+    output_schema:
+      type: object
+      required: [en, formality]
+      properties:
+        en: { type: string, minLength: 10 }
+        formality: { enum: [low, medium, high] }
+      additionalProperties: false
+    validation:
+      - { type: schema }
+      - { type: llm-judge, leniency: high, prompt: "翻訳は意味的に正しいか。" }
+    reward: 100
+    estimated_time: 10 minutes
+
+  # 10. 候補から top 3 選択
+  - id: q-t1-010-rank-top3
+    kind: task
+    tier: 1
+    title: 候補リストから上位 3 つを根拠つきで選ぶ
+    short_instruction: |
+      文脈に合う候補を candidates から 3 つ選び、ランクと選定理由を返してください。
+    worked_example:
+      input:
+        topic: 受講生にとって即効性のある AI 活用法
+        candidates: [メール下書き, 翻訳, 株価予測, 学習計画作成, 占い, 画像生成]
+      output:
+        top3:
+          - { keyword: メール下書き, rank: 1, reason: "ほぼ全員の業務で発生し、効果が即実感できる。" }
+          - { keyword: 翻訳, rank: 2, reason: "英語論文・海外資料アクセスのハードルが下がる。" }
+          - { keyword: 学習計画作成, rank: 3, reason: "本講座の宿題管理にも直結する。" }
+    output_schema:
+      type: object
+      required: [top3]
+      properties:
+        top3:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: object
+            required: [keyword, rank, reason]
+            properties:
+              keyword: { type: string }
+              rank: { type: integer, minimum: 1, maximum: 3 }
+              reason: { type: string, minLength: 15 }
+            additionalProperties: false
+      additionalProperties: false
+    validation:
+      - { type: schema }
+      - { type: llm-judge, leniency: high, prompt: "選定された 3 つは topic に対して妥当か。reason は説得力があるか。rank は重複していないか。" }
+    reward: 120
+    estimated_time: 10 minutes
+
+# ───────────────────────────────────────────────────────────
+# 設計メモ
+#
+# - 全 quest が「Claude Code に投げて 10 分以内」を想定
+# - reward は 80-120 ICHIGO に揃える（Tier 2 = 200-400, Tier 3 = 500-1000 を想定）
+# - validation の `llm-judge` の leniency は全て high（Tier 1 の合格基準を緩く）
+# - 受講生はこれらを通じて preflight ループを体得する → Tier 2 へ
+#
+# Tier 2 候補（後で別ファイルに）:
+#   - Web 検索 + 要約系
+#   - 与えられた API spec をエージェントが実装
+#   - 複数文書の比較分析
+#
+# Tier 3 候補:
+#   - 自律エージェントを書いて n 件のデータ収集
+#   - 複数ステップのワークフロー（plan → execute → verify）
+#   - ペンギンミックス用のグループ協働 quest
