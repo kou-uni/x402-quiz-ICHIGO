@@ -15,7 +15,7 @@ import {
   type Session,
 } from '@/lib/kv';
 import { config, depositAmountWei } from '@/lib/config';
-import { loadSurvey } from '@/lib/survey';
+import { loadQuest, isSurveyQuest } from '@/lib/quest';
 
 export const runtime = 'nodejs';
 
@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const wallet = body.wallet;
   const txHash = body.txHash;
+  const questId = (body.questId as string) || config.defaultQuestId;
 
   if (!isAddress(wallet)) {
     return NextResponse.json({ error: 'invalid wallet' }, { status: 400 });
@@ -34,10 +35,23 @@ export async function POST(req: NextRequest) {
   const norm = getAddress(wallet) as Address;
   const txHex = txHash as Hex;
 
-  const existing = await getSession(norm);
+  let quest;
+  try {
+    quest = loadQuest(questId);
+  } catch {
+    return NextResponse.json({ error: `quest not found: ${questId}` }, { status: 404 });
+  }
+  if (!isSurveyQuest(quest)) {
+    return NextResponse.json(
+      { error: `quest ${questId} is kind=${quest.kind}, not yet supported in v2` },
+      { status: 501 }
+    );
+  }
+
+  const existing = await getSession(questId, norm);
   if (existing?.status === 'rewarded') {
     return NextResponse.json(
-      { error: 'this wallet has already participated' },
+      { error: 'this wallet has already participated in this quest' },
       { status: 409 }
     );
   }
@@ -69,7 +83,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'tx not successful' }, { status: 400 });
   }
 
-  const expected = depositAmountWei();
+  const expected = depositAmountWei(quest);
   const treasury = getAddress(config.treasuryAddress);
   const ichigo = getAddress(config.ichigoContract);
   let matched = false;
@@ -102,9 +116,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (!matched) {
+    const human = (quest.depositAmount ?? config.defaultDepositAmount).toString();
     return NextResponse.json(
       {
-        error: `tx does not contain a matching Transfer of ${config.depositAmount} ICHIGO from ${norm} to ${treasury}`,
+        error: `tx does not contain a matching Transfer of ${human} ICHIGO from ${norm} to ${treasury}`,
       },
       { status: 400 }
     );
@@ -112,10 +127,9 @@ export async function POST(req: NextRequest) {
 
   await recordTxClaim(txHex, norm);
 
-  const survey = loadSurvey(config.surveyId);
   const session: Session = {
+    questId: quest.id,
     wallet: norm,
-    surveyId: survey.id,
     status: 'in_progress',
     depositTx: txHex,
     questionIndex: 0,
@@ -124,11 +138,12 @@ export async function POST(req: NextRequest) {
   };
   await setSession(session);
 
-  const q = survey.questions[0];
+  const q = quest.survey.questions[0];
   return NextResponse.json({
     status: 'in_progress',
+    questId: quest.id,
     nextQuestion: q.prompt,
     questionIndex: 0,
-    totalQuestions: survey.questions.length,
+    totalQuestions: quest.survey.questions.length,
   });
 }

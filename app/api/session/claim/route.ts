@@ -2,19 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAddress, getAddress, type Address } from 'viem';
 import { getSession, setSession } from '@/lib/kv';
 import { sendIchigo } from '@/lib/chain';
-import { rewardAmountWei } from '@/lib/config';
+import { config, rewardAmountWei } from '@/lib/config';
+import { loadQuest } from '@/lib/quest';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const wallet = body.wallet;
+  const questId = (body.questId as string) || config.defaultQuestId;
   if (!isAddress(wallet)) {
     return NextResponse.json({ error: 'invalid wallet' }, { status: 400 });
   }
   const norm = getAddress(wallet) as Address;
 
-  const session = await getSession(norm);
+  const session = await getSession(questId, norm);
   if (!session) {
     return NextResponse.json({ error: 'no session' }, { status: 404 });
   }
@@ -32,9 +34,16 @@ export async function POST(req: NextRequest) {
   }
   if (session.status !== 'completed') {
     return NextResponse.json(
-      { error: `survey not completed (state: ${session.status})` },
+      { error: `quest not completed (state: ${session.status})` },
       { status: 409 }
     );
+  }
+
+  let quest;
+  try {
+    quest = loadQuest(session.questId);
+  } catch {
+    return NextResponse.json({ error: 'quest not found' }, { status: 500 });
   }
 
   // Lock the session before submitting tx, to prevent double-pay on retry.
@@ -43,9 +52,8 @@ export async function POST(req: NextRequest) {
 
   let txHash;
   try {
-    txHash = await sendIchigo(norm, rewardAmountWei());
+    txHash = await sendIchigo(norm, rewardAmountWei(quest));
   } catch (e) {
-    // rollback to completed so the user can retry
     session.status = 'completed';
     await setSession(session);
     return NextResponse.json(

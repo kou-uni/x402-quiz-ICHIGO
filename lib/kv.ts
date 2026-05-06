@@ -14,9 +14,13 @@ export interface AnswerRecord {
   answer: string;
 }
 
+/**
+ * Session は (questId, wallet) のペアで一意。
+ * 同じ wallet が異なる quest に同時参加できる。
+ */
 export interface Session {
+  questId: string;
   wallet: Address;
-  surveyId: string;
   status: SessionStatus;
   depositTx?: Hex;
   rewardTx?: Hex;
@@ -27,7 +31,10 @@ export interface Session {
   rewardedAt?: string;
 }
 
-const sessionKey = (wallet: string) => `session:${wallet.toLowerCase()}`;
+const sessionKey = (questId: string, wallet: string) =>
+  `session:${questId}:${wallet.toLowerCase()}`;
+
+/** tx hash 単位のリプレイ防止は global（quest を跨いで同じ tx を再利用させない）。 */
 const txKey = (txHash: string) => `tx:${txHash.toLowerCase()}`;
 
 const useKv = !!process.env.KV_REST_API_URL;
@@ -45,18 +52,24 @@ const store = useKv
       },
     };
 
-export async function getSession(wallet: Address): Promise<Session | null> {
-  return await store.get<Session>(sessionKey(wallet));
+export async function getSession(
+  questId: string,
+  wallet: Address
+): Promise<Session | null> {
+  return await store.get<Session>(sessionKey(questId, wallet));
 }
 
 export async function setSession(s: Session): Promise<void> {
-  await store.set(sessionKey(s.wallet), s);
+  await store.set(sessionKey(s.questId, s.wallet), s);
 }
 
 export async function txAlreadyClaimed(txHash: Hex): Promise<string | null> {
   return await store.get<string>(txKey(txHash));
 }
 
-export async function recordTxClaim(txHash: Hex, wallet: Address): Promise<void> {
+export async function recordTxClaim(
+  txHash: Hex,
+  wallet: Address
+): Promise<void> {
   await store.set(txKey(txHash), wallet.toLowerCase());
 }

@@ -1,10 +1,28 @@
-# x402 Quiz ICHIGO
+# x402 Quiz ICHIGO（schema-v2-quest ブランチ）
 
-Optimism 上の ICHIGO トークンを使った "x402 風" アンケートエージェント。
-ユーザーが **100 ICHIGO** を treasury に deposit すると 5 問のアンケートが始まり、
-完了すると **500 ICHIGO** が返却されます。1 ウォレット 1 回限り。
+Optimism 上の ICHIGO トークンを使った "x402 風" Quest エージェント。
+ユーザーが ICHIGO を treasury に deposit すると Quest が始まり、
+完了すると報酬 ICHIGO が返却されます。1 ウォレット × 1 Quest = 1 回限り。
 
 Web3AI概論 2026（千葉工業大学）課題運用想定。
+
+## v2 ブランチでの変更点
+
+このブランチ (`schema-v2-quest`) は v1 (main) からの**破壊的なスキーマ変更**を含みます:
+
+- `Survey` を `Quest` に抽象化（`kind: 'survey' | 'task'` で多型化）
+- KV キーが `session:{wallet}` → `session:{questId}:{wallet}` に変更
+- API リクエストが `questId` を受け取る（省略時は `DEFAULT_QUEST_ID`）
+- フロントエンドが URL クエリ `?q=<questId>` で Quest を切り替え可能
+- 経済値 (`depositAmount` / `rewardAmount`) を Quest YAML に内蔵、env はフォールバック
+- ファイル: `surveys/v1.yaml` → `quests/q-survey-001.yaml`、`lib/survey.ts` → `lib/quest.ts`
+- 検証ルール `validation: ValidationRule[]` を Quest 内に記述（v2 では `llm-judge` のみ実装）
+
+詳細設計: [`docs/quest-platform-plan.md`](./docs/quest-platform-plan.md)
+意思決定書: Obsidian `decisions/2026-05-06-quest-platform-pivot.md`
+
+**v1 のセッションデータとは互換性がありません。** v2 をデプロイする前に
+KV をフラッシュするか、新しい KV を割り当ててください。
 
 ## アーキテクチャ
 
@@ -85,28 +103,33 @@ Vercel ダッシュボードで:
 2. **Settings → Environment Variables** で他の env を設定
 3. 再デプロイ
 
-## ファイル構成
+## ファイル構成（v2）
 
 ```
 .
 ├─ app/
 │  ├─ layout.tsx                  RootLayout
 │  ├─ providers.tsx               wagmi + RainbowKit
-│  ├─ page.tsx                    main UI（接続→deposit→chat→reward）
+│  ├─ page.tsx                    main UI（?q=<questId> でQuest切替）
 │  ├─ globals.css
 │  └─ api/session/
-│     ├─ route.ts                 POST /api/session       (state lookup)
-│     ├─ pay/route.ts             POST /api/session/pay   (deposit verify)
-│     ├─ answer/route.ts          POST /api/session/answer (chat turn)
-│     └─ claim/route.ts           POST /api/session/claim  (reward)
+│     ├─ route.ts                 POST /api/session       (state lookup; takes questId)
+│     ├─ pay/route.ts             POST /api/session/pay   (deposit verify; takes questId)
+│     ├─ answer/route.ts          POST /api/session/answer (chat turn; takes questId)
+│     └─ claim/route.ts           POST /api/session/claim  (reward; takes questId)
 ├─ lib/
-│  ├─ config.ts                   env-driven runtime config
+│  ├─ config.ts                   env-driven runtime config (Quest 経済値はフォールバック)
 │  ├─ chain.ts                    viem clients, ICHIGO ABI, sendIchigo()
-│  ├─ kv.ts                       Vercel KV wrapper (memory fallback)
-│  ├─ survey.ts                   YAML loader
+│  ├─ kv.ts                       Vercel KV wrapper (key: session:{questId}:{wallet})
+│  ├─ quest.ts                    Quest 多型ローダー (kind: survey | task)
 │  └─ openai.ts                   substantive-answer judge
-├─ surveys/
-│  └─ v1.yaml                     5 dummy questions
+├─ quests/
+│  └─ q-survey-001.yaml           デフォルト Quest（survey 形式、5 問）
+├─ scripts/
+│  └─ treasury-status.mjs         Treasury 健康チェック（npm run check）
+├─ docs/
+│  ├─ quest-platform-plan.md      長期設計計画書
+│  └─ tier1-quest-drafts.yaml     Tier 1 タスク 10 例の草案
 ├─ .env.example
 ├─ next.config.mjs
 ├─ tsconfig.json
@@ -119,9 +142,9 @@ Vercel ダッシュボードで:
 none → in_progress → completed → rewarding → rewarded
 ```
 
-KV キー:
-- `session:{0xwallet}` → Session JSON
-- `tx:{0xtxhash}` → wallet binding（リプレイ防止）
+KV キー（v2）:
+- `session:{questId}:{0xwallet}` → Session JSON
+- `tx:{0xtxhash}` → wallet binding（リプレイ防止、global）
 
 ## 既知の TODO（v1 の範囲外）
 

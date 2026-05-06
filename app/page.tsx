@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount, useWriteContract } from 'wagmi';
 import { parseAbi, parseUnits, type Address, type Hex } from 'viem';
@@ -11,8 +12,6 @@ const ICHIGO_ABI = parseAbi([
 
 const TREASURY = process.env.NEXT_PUBLIC_TREASURY_ADDRESS as Address;
 const ICHIGO = process.env.NEXT_PUBLIC_ICHIGO_CONTRACT as Address;
-const DEPOSIT_AMOUNT = process.env.NEXT_PUBLIC_DEPOSIT_AMOUNT ?? '100';
-const REWARD_AMOUNT = process.env.NEXT_PUBLIC_REWARD_AMOUNT ?? '500';
 
 type Phase =
   | 'loading'
@@ -27,7 +26,13 @@ type Phase =
   | 'already_done'
   | 'error';
 
-export default function Page() {
+function PageInner() {
+  const searchParams = useSearchParams();
+  const questId = useMemo(
+    () => searchParams.get('q') ?? undefined,
+    [searchParams]
+  );
+
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
 
@@ -40,13 +45,23 @@ export default function Page() {
   const [answer, setAnswer] = useState('');
   const [rewardTx, setRewardTx] = useState<Hex | null>(null);
 
+  // Quest meta（サーバーから取得した値で表示）
+  const [questTitle, setQuestTitle] = useState<string | null>(null);
+  const [depositAmount, setDepositAmount] = useState('100');
+  const [rewardAmount, setRewardAmount] = useState('500');
+
   useEffect(() => {
     if (!isConnected || !address) {
       setPhase('loading');
       return;
     }
     void refreshSession(address);
-  }, [address, isConnected]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, isConnected, questId]);
+
+  function withQuestId(payload: Record<string, unknown>) {
+    return questId ? { ...payload, questId } : payload;
+  }
 
   async function refreshSession(wallet: Address) {
     setPhase('loading');
@@ -54,10 +69,19 @@ export default function Page() {
       const r = await fetch('/api/session', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ wallet }),
+        body: JSON.stringify(withQuestId({ wallet })),
       });
       const s = await r.json();
+      if (!r.ok) {
+        setError(s.error ?? '状態取得に失敗');
+        setPhase('error');
+        return;
+      }
       setTotalQuestions(s.totalQuestions ?? 5);
+      if (s.questTitle) setQuestTitle(s.questTitle);
+      if (s.depositAmount) setDepositAmount(s.depositAmount);
+      if (s.rewardAmount) setRewardAmount(s.rewardAmount);
+
       if (s.status === 'rewarded') {
         setRewardTx(s.rewardTx);
         setPhase('already_done');
@@ -81,7 +105,7 @@ export default function Page() {
     setPhase('depositing');
     setError(null);
     try {
-      const value = parseUnits(DEPOSIT_AMOUNT, 18);
+      const value = parseUnits(depositAmount, 18);
       const txHash = await writeContractAsync({
         address: ICHIGO,
         abi: ICHIGO_ABI,
@@ -92,7 +116,7 @@ export default function Page() {
       const r = await fetch('/api/session/pay', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ wallet: address, txHash }),
+        body: JSON.stringify(withQuestId({ wallet: address, txHash })),
       });
       const data = await r.json();
       if (!r.ok) {
@@ -119,7 +143,7 @@ export default function Page() {
       const r = await fetch('/api/session/answer', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ wallet: address, answer }),
+        body: JSON.stringify(withQuestId({ wallet: address, answer })),
       });
       const data = await r.json();
       if (!r.ok) {
@@ -155,7 +179,7 @@ export default function Page() {
       const r = await fetch('/api/session/claim', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ wallet: address }),
+        body: JSON.stringify(withQuestId({ wallet: address })),
       });
       const data = await r.json();
       if (!r.ok) {
@@ -179,9 +203,9 @@ export default function Page() {
         padding: '0 24px 80px',
       }}
     >
-      <h1 style={{ marginBottom: 4 }}>x402 Quiz ICHIGO</h1>
+      <h1 style={{ marginBottom: 4 }}>{questTitle ?? 'x402 Quest ICHIGO'}</h1>
       <p className="muted">
-        {DEPOSIT_AMOUNT} ICHIGO を deposit して 5 問答えると {REWARD_AMOUNT} ICHIGO を受け取れます（1 ウォレット 1 回）。
+        {depositAmount} ICHIGO を deposit して {totalQuestions} 問答えると {rewardAmount} ICHIGO を受け取れます（1 ウォレット 1 回）。
       </p>
 
       <div style={{ marginTop: 16 }}>
@@ -201,10 +225,10 @@ export default function Page() {
       {isConnected && phase === 'idle' && (
         <div className="card">
           <p>
-            参加するには <strong>{DEPOSIT_AMOUNT} ICHIGO</strong> を treasury（{shorten(TREASURY)}）に送金してください。
-            アンケートを完了すると <strong>{REWARD_AMOUNT} ICHIGO</strong> が返却されます。
+            参加するには <strong>{depositAmount} ICHIGO</strong> を treasury（{shorten(TREASURY)}）に送金してください。
+            完了すると <strong>{rewardAmount} ICHIGO</strong> が返却されます。
           </p>
-          <button onClick={handleDeposit}>{DEPOSIT_AMOUNT} ICHIGO を deposit してスタート</button>
+          <button onClick={handleDeposit}>{depositAmount} ICHIGO を deposit してスタート</button>
         </div>
       )}
 
@@ -248,7 +272,7 @@ export default function Page() {
       {phase === 'completed' && (
         <div className="card">
           <p>すべての質問への回答ありがとうございました。</p>
-          <button onClick={handleClaim}>{REWARD_AMOUNT} ICHIGO を受け取る</button>
+          <button onClick={handleClaim}>{rewardAmount} ICHIGO を受け取る</button>
         </div>
       )}
 
@@ -260,7 +284,7 @@ export default function Page() {
 
       {phase === 'rewarded' && rewardTx && (
         <div className="card">
-          <p>✅ {REWARD_AMOUNT} ICHIGO を送金しました。</p>
+          <p>✅ {rewardAmount} ICHIGO を送金しました。</p>
           <p className="tx">
             tx:{' '}
             <a
@@ -304,6 +328,14 @@ export default function Page() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<p style={{ padding: 24 }}>読み込み中…</p>}>
+      <PageInner />
+    </Suspense>
   );
 }
 

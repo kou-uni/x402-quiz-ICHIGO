@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAddress, getAddress, type Address } from 'viem';
 import { getSession, setSession } from '@/lib/kv';
-import { loadSurvey } from '@/lib/survey';
+import { loadQuest, isSurveyQuest } from '@/lib/quest';
+import { config } from '@/lib/config';
 import { judgeAnswer } from '@/lib/openai';
 
 export const runtime = 'nodejs';
@@ -10,6 +11,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const wallet = body.wallet;
   const answer = String(body.answer ?? '').trim();
+  const questId = (body.questId as string) || config.defaultQuestId;
 
   if (!isAddress(wallet)) {
     return NextResponse.json({ error: 'invalid wallet' }, { status: 400 });
@@ -19,7 +21,7 @@ export async function POST(req: NextRequest) {
   }
 
   const norm = getAddress(wallet) as Address;
-  const session = await getSession(norm);
+  const session = await getSession(questId, norm);
   if (!session) {
     return NextResponse.json({ error: 'no session' }, { status: 404 });
   }
@@ -30,8 +32,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const survey = loadSurvey(session.surveyId);
-  const q = survey.questions[session.questionIndex];
+  let quest;
+  try {
+    quest = loadQuest(session.questId);
+  } catch {
+    return NextResponse.json({ error: 'quest not found' }, { status: 500 });
+  }
+  if (!isSurveyQuest(quest)) {
+    return NextResponse.json({ error: 'quest is not a survey' }, { status: 500 });
+  }
+
+  const q = quest.survey.questions[session.questionIndex];
   if (!q) {
     return NextResponse.json({ error: 'no question at index' }, { status: 500 });
   }
@@ -54,7 +65,7 @@ export async function POST(req: NextRequest) {
   session.answers.push({ questionId: q.id, prompt: q.prompt, answer });
   session.questionIndex += 1;
 
-  if (session.questionIndex >= survey.questions.length) {
+  if (session.questionIndex >= quest.survey.questions.length) {
     session.status = 'completed';
     session.completedAt = new Date().toISOString();
     await setSession(session);
@@ -62,10 +73,10 @@ export async function POST(req: NextRequest) {
   }
 
   await setSession(session);
-  const next = survey.questions[session.questionIndex];
+  const next = quest.survey.questions[session.questionIndex];
   return NextResponse.json({
     nextQuestion: next.prompt,
     questionIndex: session.questionIndex,
-    totalQuestions: survey.questions.length,
+    totalQuestions: quest.survey.questions.length,
   });
 }
