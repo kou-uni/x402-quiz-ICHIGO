@@ -43,7 +43,7 @@ sign 対象を EIP-712 ではなく実 tx に置き換えています。
 `ICHIGO.sol` は `Whitelistable` を継承しており、ホワイトリスト登録ウォレット間でしか転送できません。
 **起動前に treasury アドレスをホワイトリストに登録してください。**
 
-- Treasury address: `0xd5F68D7a045eE86AECc6b5aE866c3113913a2918`
+- Treasury address: `0xEFFdE47EaD5CEE9d19f20Bdf5210664e9F08c4Ba`
 
 ## セットアップ
 
