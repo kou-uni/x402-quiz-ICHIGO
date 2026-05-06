@@ -113,6 +113,19 @@ Vercel ダッシュボードで:
 └─ package.json
 ```
 
+## Admin Dashboard
+
+`/admin` にアクセスすると、収集された全 session（参加者ウォレット / 状態 / 回答 / tx hash）が
+1 画面で見られる軽量ダッシュボードです。
+
+- ログイン: `/admin/login` でパスワード入力（env `ADMIN_PASSWORD`）
+- セッション cookie 24 時間
+- HMAC-signed cookie、HttpOnly + Secure（本番）
+- データは Vercel KV から直読み（リロードで最新化）
+
+`ADMIN_PASSWORD` は Vercel の Environment Variables に設定してください。
+推奨: `openssl rand -base64 24` で生成した長い文字列。
+
 ## State machine
 
 ```
