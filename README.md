@@ -6,6 +6,17 @@ Optimism 上の ICHIGO トークンを使った "x402 風" アンケートエー
 
 Web3AI概論 2026（千葉工業大学）課題運用想定。
 
+## 現在の状態（ブランチ構成）
+
+| ブランチ | 内容 |
+|---|---|
+| `main` | v1 MVP（本 README が説明する Survey 単体運用）。本番デプロイ系列 |
+| `schema-v2-quest` | v2 WIP。`Survey` → `Quest` 抽象化、KV キー再設計、Admin API skeleton。**main と KV 互換性なし**。詳細はそちらの README を参照 |
+
+長期方針（v1 → v2 Quest Platform → v3 Skill Market）と設計原則は
+[`docs/quest-platform-plan.md`](./docs/quest-platform-plan.md) を参照。
+v2 への pivot は 2026-05-06 に決定済み（Obsidian `decisions/2026-05-06-quest-platform-pivot.md`）。
+
 ## アーキテクチャ
 
 ```
